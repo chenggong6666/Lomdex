@@ -5116,231 +5116,196 @@
       
       // 更新阶梯奖励显示
       updateTierRewardsDisplay() {
-        const container = document.getElementById('tierRewardsContainer');
-        if (!container) return;
-        
-        const data = this.cachedData;
-        
-        // 如果没有数据，显示加载状态
-        if (!data.userInfo || !data.tierStatus || !data.tierConfigs) {
-          container.innerHTML = `
-            <div class="reward-loading">
-              <div class="loading-spinner" style="margin: 0 auto 20px;"></div>
-              <div style="color: var(--text-secondary); font-size: 14px;">
-                ${isChinese ? '加载奖励数据中...' : 'Loading reward data...'}
-              </div>
-            </div>
-          `;
-          return;
-        }
-        
-        // 生成阶梯奖励HTML
-        const tiersHTML = this.generateTiersHTML();
-        container.innerHTML = tiersHTML;
-        
-        // 添加事件监听器
-        this.attachTierEventListeners();
-      },
+  const container = document.getElementById('tierRewardsContainer');
+  if (!container) {
+    console.error('未找到tierRewardsContainer元素');
+    return;
+  }
+  
+  const data = this.cachedData;
+  
+  // 如果没有数据，显示加载状态
+  if (!data.userInfo || !data.tierStatus || !data.tierConfigs) {
+    console.log('数据未加载完成:', { userInfo: data.userInfo, tierStatus: data.tierStatus, tierConfigs: data.tierConfigs });
+    
+    container.innerHTML = `
+      <div class="reward-loading">
+        <div class="loading-spinner" style="margin: 0 auto 20px;"></div>
+        <div style="color: var(--text-secondary); font-size: 14px;">
+          ${isChinese ? '加载奖励数据中...' : 'Loading reward data...'}
+        </div>
+        <button class="btn" onclick="RewardManager.refreshData()" 
+          style="background: var(--gradient-primary); margin-top: 10px;">
+          ${isChinese ? '手动刷新' : 'Refresh'}
+        </button>
+      </div>
+    `;
+    return;
+  }
+  
+  // 如果没有激活奖励系统，显示激活提示
+  if (!data.userInfo.isActive) {
+    container.innerHTML = `
+      <div class="reward-info-card">
+        <div style="font-size: 20px; color: var(--accent-yellow); margin-bottom: 10px;">🚀</div>
+        <div style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
+          ${isChinese ? '奖励系统未激活' : 'Reward System Not Activated'}
+        </div>
+        <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
+          ${isChinese ? 
+            '激活奖励系统后，开始计算30天、90天、180天、360天的持有奖励' :
+            'Activate the reward system to start calculating 30, 90, 180, 360 day rewards'}
+        </div>
+        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+          ${isChinese ? '激活条件：' : 'Requirements:'}
+        </div>
+        <ul style="font-size: 11px; color: var(--text-secondary); padding-left: 20px; text-align: left;">
+          <li>${isChinese ? '持有至少 1 LP 代币' : 'Hold at least 1 LP token'}</li>
+          <li>${isChinese ? '绑定邀请地址（可选）' : 'Bind invite address (optional)'}</li>
+          <li>${isChinese ? '连接钱包' : 'Connect wallet'}</li>
+        </ul>
+      </div>
+    `;
+    return;
+  }
+  
+  // 生成阶梯HTML
+  const tiersHTML = this.generateTiersHTML();
+  container.innerHTML = tiersHTML;
+  
+  // 添加事件监听器
+  this.attachTierEventListeners();
+},
+
+// 生成阶梯HTML
+generateTiersHTML() {
+  const data = this.cachedData;
+  const userInfo = data.userInfo;
+  const tierStatus = data.tierStatus;
+  const tierConfigs = data.tierConfigs;
+  
+  if (!userInfo || !tierStatus || !tierConfigs) {
+    return '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">数据加载中...</div>';
+  }
+  
+  // 如果没有阶梯数据，使用默认配置
+  const tiersToDisplay = tierStatus.length > 0 ? tierStatus : 
+    REWARD_CONFIG.TIER_CONFIGS.map((config, index) => ({
+      index,
+      isAvailable: false,
+      isClaimed: false,
+      rewardAmount: 0,
+      claimTime: 0
+    }));
+  
+  return tiersToDisplay.map((tier, index) => {
+    const tierConfig = tierConfigs[index] || REWARD_CONFIG.TIER_CONFIGS[index];
+    
+    if (!tierConfig) {
+      console.error(`未找到阶梯 ${index} 的配置`);
+      return '';
+    }
+    
+    const isActive = tier.isAvailable && !tier.isClaimed;
+    const isClaimed = tier.isClaimed;
+    
+    // 计算进度
+    let progress = 0;
+    if (userInfo.activationTime > 0 && !isClaimed) {
+      const currentTime = Math.floor(Date.now() / 1000);
+      const timePassed = currentTime - userInfo.activationTime;
+      const totalTime = tierConfig.days * 86400;
+      progress = Math.min(100, (timePassed / totalTime) * 100);
+    }
+    
+    // 计算倒计时
+    let countdownText = '';
+    let statusText = '';
+    let statusClass = 'locked';
+    
+    if (isClaimed) {
+      statusText = '已领取';
+      statusClass = 'claimed';
+    } else if (isActive) {
+      statusText = '可领取';
+      statusClass = 'available';
+    } else if (userInfo.activationTime > 0) {
+      const currentTime = Math.floor(Date.now() / 1000);
+      const requiredTime = tierConfig.days * 86400;
+      const timePassed = currentTime - userInfo.activationTime;
+      const timeLeft = Math.max(0, requiredTime - timePassed);
       
-      // 生成阶梯HTML
-      generateTiersHTML() {
-        const data = this.cachedData;
-        const userInfo = data.userInfo;
-        const tierStatus = data.tierStatus;
-        const tierConfigs = data.tierConfigs;
-        
-        if (!userInfo || !tierStatus || !tierConfigs) return '';
-        
-        return tierStatus.map((tier, index) => {
-          const tierConfig = tierConfigs.find(c => c.days === [30, 90, 180, 360][tier.index]) || 
-                           REWARD_CONFIG.TIER_CONFIGS[tier.index];
-          
-          const isActive = tier.isAvailable;
-          const isClaimed = tier.isClaimed;
-          
-          // 计算进度
-          let progress = 0;
-          if (userInfo.activationTime > 0 && !isClaimed) {
-            const currentTime = Math.floor(Date.now() / 1000);
-            const timePassed = currentTime - userInfo.activationTime;
-            const totalTime = tierConfig.days * 86400;
-            progress = Math.min(100, (timePassed / totalTime) * 100);
-          }
-          
-          // 计算倒计时
-          let countdownText = '';
-          if (!isClaimed && userInfo.activationTime > 0 && !tier.isAvailable) {
-            const currentTime = Math.floor(Date.now() / 1000);
-            const requiredTime = tierConfig.days * 86400;
-            const timePassed = currentTime - userInfo.activationTime;
-            const timeLeft = Math.max(0, requiredTime - timePassed);
-            
-            if (timeLeft > 0) {
-              const daysLeft = Math.ceil(timeLeft / 86400);
-              countdownText = `${daysLeft}天后可领取`;
-            }
-          }
-          
-          return `
-            <div class="tier-reward-item ${isActive ? 'active' : ''} ${isClaimed ? 'claimed' : ''}">
-              <div class="tier-reward-header">
-                <div class="tier-title">
-                  <span class="tier-icon">${tierConfig?.icon || '🏅'}</span>
-                  <span>${tierConfig?.name || `阶梯${tier.index + 1}`} (${tierConfig?.days || 0}天)</span>
-                </div>
-                <div class="tier-status ${isClaimed ? 'claimed' : isActive ? 'available' : 'locked'}">
-                  ${isClaimed ? '已领取' : isActive ? '可领取' : countdownText || '未激活'}
-                </div>
-              </div>
-              ${!isClaimed ? `
-                <div class="tier-progress">
-                  <div class="tier-progress-info">
-                    <span>奖励比例</span>
-                    <span>${((tierConfig?.rewardPercent || 0) * 100).toFixed(1)}%</span>
-                  </div>
-                  <div class="tier-progress-bar">
-                    <div class="tier-progress-fill" style="width: ${progress}%"></div>
-                  </div>
-                </div>
-                ${tier.rewardAmount > 0 ? `
-                  <div class="tier-reward-amount">
-                    <div>预计奖励: ${tier.rewardAmount.toFixed(6)} LOM</div>
-                    ${isActive ? 
-                      `<button class="claim-tier-btn" data-tier="${tier.index}" 
-                        style="margin-top: 8px; padding: 8px 16px; background: var(--gradient-yellow); 
-                        color: #0f172a; border: none; border-radius: 8px; font-size: 12px; 
-                        font-weight: 600; cursor: pointer; width: 100%;">
-                        领取奖励
-                      </button>` : 
-                      `<div style="font-size: 11px; color: var(--text-secondary); margin-top: 8px;">
-                        ${userInfo.activationTime ? '持有时间越长，奖励越高' : '激活后开始计时'}
-                      </div>`
-                    }
-                  </div>
-                ` : ''}
-              ` : `
-                <div class="tier-reward-amount" style="color: var(--success);">
-                  ✅ 已领取 ${tier.rewardAmount?.toFixed(6) || '0'} LOM
-                </div>
-              `}
-            </div>
-          `;
-        }).join('');
-      },
-      
-      // 更新按钮状态
-      updateButtonStates() {
-        const data = this.cachedData;
-        const activateBtn = document.getElementById('activateRewardBtn');
-        const claimAllBtn = document.getElementById('claimAllRewardsBtn');
-        
-        if (!data.userInfo) {
-          if (activateBtn) activateBtn.disabled = true;
-          if (claimAllBtn) claimAllBtn.disabled = true;
-          return;
-        }
-        
-        // 更新激活按钮
-        if (activateBtn) {
-          if (data.userInfo.isActive) {
-            activateBtn.innerHTML = '<span>✅</span><span>已激活</span>';
-            activateBtn.disabled = true;
-          } else {
-            activateBtn.innerHTML = '<span>🚀</span><span>激活奖励系统</span>';
-            activateBtn.disabled = false;
-          }
-        }
-        
-        // 更新领取所有按钮
-        if (claimAllBtn) {
-          const availableRewards = data.tierStatus?.filter(t => 
-            t.isAvailable && !t.isClaimed && t.rewardAmount > 0
-          );
-          
-          if (availableRewards && availableRewards.length > 0) {
-            const totalAmount = availableRewards.reduce((sum, t) => sum + t.rewardAmount, 0);
-            claimAllBtn.innerHTML = `<span>💰</span><span>领取所有奖励 (${totalAmount.toFixed(2)} LOM)</span>`;
-            claimAllBtn.disabled = false;
-          } else {
-            claimAllBtn.innerHTML = '<span>💰</span><span>领取所有奖励</span>';
-            claimAllBtn.disabled = true;
-          }
-        }
-      },
-      
-      // 添加阶梯事件监听器
-      attachTierEventListeners() {
-        const container = document.getElementById('tierRewardsContainer');
-        if (!container) return;
-        
-        // 使用事件委托
-        container.addEventListener('click', (e) => {
-          const claimBtn = e.target.closest('.claim-tier-btn');
-          if (claimBtn) {
-            const tierIndex = parseInt(claimBtn.dataset.tier);
-            this.claimTierReward(tierIndex);
-          }
-        });
-      },
-      
-      // 打开奖励模态框
-      async openRewardModal() {
-        if (!account) {
-          Utils.showError(isChinese ? "请先连接钱包" : "Please connect wallet first");
-          return;
-        }
-        
-        // 显示模态框
-        document.getElementById('rewardModal').style.display = 'flex';
-        
-        // 显示加载状态
-        const container = document.getElementById('tierRewardsContainer');
-        if (container) {
-          container.innerHTML = `
-            <div class="reward-loading">
-              <div class="loading-spinner" style="margin: 0 auto 20px;"></div>
-              <div style="color: var(--text-secondary); font-size: 14px;">
-                ${isChinese ? '加载奖励数据中...' : 'Loading reward data...'}
-              </div>
-            </div>
-          `;
-        }
-        
-        // 异步获取数据
-        try {
-          await this.fetchAllData();
-          this.updateRewardModalUI();
-        } catch (error) {
-          console.error('获取奖励数据失败:', error);
-          
-          // 如果获取失败，尝试使用缓存
-          if (this.cachedData.userInfo) {
-            this.updateRewardModalUI();
-          } else {
-            this.showErrorState();
-          }
-        }
-      },
-      
-      // 显示错误状态
-      showErrorState() {
-        const container = document.getElementById('tierRewardsContainer');
-        if (container) {
-          container.innerHTML = `
-            <div class="reward-error">
-              <div style="font-size: 48px; margin-bottom: 20px;">😢</div>
-              <div style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px;">
-                ${isChinese ? '加载奖励数据失败' : 'Failed to load reward data'}
-              </div>
-              <button class="btn" onclick="RewardManager.refreshData()" 
-                style="background: var(--gradient-primary);">
-                ${isChinese ? '重试' : 'Retry'}
-              </button>
-            </div>
-          `;
-        }
+      if (timeLeft > 0) {
+        const daysLeft = Math.ceil(timeLeft / 86400);
+        countdownText = `${daysLeft}天后可领取`;
+        statusText = countdownText;
+        statusClass = 'locked';
+      } else {
+        statusText = '可领取';
+        statusClass = 'available';
       }
-    };
+    } else {
+      statusText = '未激活';
+      statusClass = 'locked';
+    }
+    
+    // 格式化奖励金额
+    const rewardAmountFormatted = tier.rewardAmount ? 
+      tier.rewardAmount.toFixed(6) : 
+      '0.000000';
+    
+    return `
+      <div class="tier-reward-item ${isActive ? 'active' : ''} ${isClaimed ? 'claimed' : ''}">
+        <div class="tier-reward-header">
+          <div class="tier-title">
+            <span class="tier-icon">${tierConfig.icon || this.getTierIcon(index)}</span>
+            <span>${tierConfig.name || `阶梯${index + 1}`} (${tierConfig.days}天)</span>
+          </div>
+          <div class="tier-status ${statusClass}">
+            ${statusText}
+          </div>
+        </div>
+        ${!isClaimed ? `
+          <div class="tier-progress">
+            <div class="tier-progress-info">
+              <span>${isChinese ? '奖励比例' : 'Reward Percent'}</span>
+              <span>${((tierConfig.rewardPercent || 0) * 100).toFixed(1)}%</span>
+            </div>
+            <div class="tier-progress-bar">
+              <div class="tier-progress-fill" style="width: ${progress}%"></div>
+            </div>
+          </div>
+          <div class="tier-reward-amount">
+            <div>${isChinese ? '预计奖励' : 'Est. Reward'}: ${rewardAmountFormatted} LOM</div>
+            ${tier.rewardAmount > 0 && isActive ? 
+              `<button class="claim-tier-btn" data-tier="${index}" 
+                style="margin-top: 8px; padding: 8px 16px; background: var(--gradient-yellow); 
+                color: #0f172a; border: none; border-radius: 8px; font-size: 12px; 
+                font-weight: 600; cursor: pointer; width: 100%;">
+                ${isChinese ? '领取奖励' : 'Claim Reward'}
+              </button>` : 
+              `<div style="font-size: 11px; color: var(--text-secondary); margin-top: 8px; text-align: center;">
+                ${userInfo.activationTime > 0 ? 
+                  (isChinese ? '持有时间越长，奖励越高' : 'Longer holding time, higher reward') : 
+                  (isChinese ? '激活后开始计时' : 'Timer starts after activation')}
+              </div>`
+            }
+          </div>
+        ` : `
+          <div class="tier-reward-amount" style="color: var(--success);">
+            ✅ ${isChinese ? '已领取' : 'Claimed'} ${rewardAmountFormatted} LOM
+          </div>
+        `}
+      </div>
+    `;
+  }).join('');
+},
+
+// 获取阶梯图标
+getTierIcon(tierIndex) {
+  const icons = ['🥉', '🥈', '🥇', '💎'];
+  return icons[tierIndex] || '🏅';
+},
 
     // ==================== 添加奖励系统按钮 ====================
     function addRewardSystemButton() {
